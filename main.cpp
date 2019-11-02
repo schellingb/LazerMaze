@@ -1,6 +1,6 @@
 /*
   Lazer Maze
-  Copyright (C) 2018 Bernhard Schelling
+  Copyright (C) 2018-2019 Bernhard Schelling
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
@@ -32,6 +32,12 @@
 #include <ZL_Input.h>
 #include <ZL_SynthImc.h>
 #include <vector>
+
+#ifdef __SMARTPHONE__
+bool showTouchUI = true;
+#else
+bool showTouchUI = false;
+#endif
 
 static ZL_Font fntBig;
 static ZL_Surface srfTiles, srfItems, srfFloor;
@@ -451,13 +457,16 @@ static void Init()
 
 static void Update()
 {
-	#ifndef __WEBAPP__
+	if (showTouchUI && ZL_Input::KeyDownCount()) showTouchUI = false;
+	else if (!showTouchUI && ZL_Input::Down(ZL_BUTTON_LEFT)) showTouchUI = true;
+
 	if (ZL_Input::Down(ZLK_ESCAPE))
 	{
 		if (Phase == PHASE_PLAY) Phase = PHASE_ASKQUIT;
+		#ifndef __WEBAPP__
 		else ZL_Application::Quit();
+		#endif
 	}
-	#endif
 
 	if (Phase == PHASE_FADEIN)
 	{
@@ -473,12 +482,22 @@ static void Update()
 	{
 		if (imcSfxMove.IsPlaying()) imcSfxMove.Stop();
 		if (Phase == PHASE_ASKQUIT && ZL_Input::Up(ZLK_SPACE)) Phase = PHASE_PLAY;
+		else if (Phase == PHASE_ASKQUIT && ZL_Input::Clicked()) Phase = PHASE_PLAY;
 		else return;
 	}
+
+	bool actionHit = ((Player.OperatingPrism || Player.TileTouchingPrism) && ZL_Input::Down(ZLK_SPACE));
+
+	ZL_Vector touchPosPlayerOnScreen = ZL_Rectf::Map(Player.Pos, recOrtho, ZL_Rectf(0, 0, ZLWIDTH, ZLHEIGHT));
+	ZL_Rectf touchRecAction = ZL_Rectf(touchPosPlayerOnScreen, ZLHEIGHT*.05f);
+	ZL_Vector touchDrag = (ZL_Input::HeldOutside(touchRecAction) ? ((ZL_Input::Pointer() - touchPosPlayerOnScreen).AddLength(-ZLHEIGHT*.05f) / (ZLHEIGHT*.2f)).SetMaxLength(1) : ZL_Vector::Zero);
+	actionHit |= ((Player.OperatingPrism || Player.TileTouchingPrism) && ZL_Input::Clicked(touchRecAction));
 
 	if (Player.OperatingPrism == NULL)
 	{
 		Player.Vel = ZLV((ZL_Input::Held(ZLK_D)||ZL_Input::Held(ZLK_RIGHT)) - (ZL_Input::Held(ZLK_A)||ZL_Input::Held(ZLK_LEFT)), (ZL_Input::Held(ZLK_W)||ZL_Input::Held(ZLK_UP)) - (ZL_Input::Held(ZLK_S)||ZL_Input::Held(ZLK_DOWN)));
+		if (!Player.Vel) Player.Vel = touchDrag;
+
 		bool IsMoving = !!Player.Vel;
 		if (IsMoving)
 		{
@@ -492,7 +511,7 @@ static void Update()
 			}
 		}
 
-		if (Player.TileTouchingPrism && ZL_Input::Down(ZLK_SPACE))
+		if (Player.TileTouchingPrism && actionHit)
 		{
 			Player.PrismRotSpeed = 0;
 			Player.OperatingPrism = sThing::Get(Player.TileTouchingPrism);
@@ -507,13 +526,15 @@ static void Update()
 	else
 	{
 		float PrismRot = s((ZL_Input::Held(ZLK_A)||ZL_Input::Held(ZLK_LEFT)) - (ZL_Input::Held(ZLK_D)||ZL_Input::Held(ZLK_RIGHT)));
+		if (!PrismRot) PrismRot = -touchDrag.x;
+
 		if (PrismRot)
 		{
 			Player.PrismRotSpeed = ZL_Math::Clamp(Player.PrismRotSpeed + ZLELAPSEDF(5), .5f, 5);
 			Player.OperatingPrism->Dir.Rotate(ZLELAPSEDF(PrismRot * Player.PrismRotSpeed));
 		}
 		else Player.PrismRotSpeed = 0;
-		if (ZL_Input::Down(ZLK_SPACE))
+		if (actionHit)
 		{
 			Player.OperatingPrism = NULL;
 			imcSfxOperateOff.Play(true);
@@ -534,7 +555,6 @@ static void Draw()
 
 	ZL_Display::PushOrtho(recOrtho);
 
-	ZL_SeededRand rnd(0);
 	for (int map = 0; map <= 4; map++)
 	{
 		ZL_Display::PushMatrix();
@@ -634,7 +654,7 @@ static void Draw()
 			}
 		}
 
-		#if defined(ZILLALOG)
+		#if defined(ZILLALOG) && !defined(__SMARTPHONE__)
 		if (ZL_Input::Held(ZLK_LALT))
 		{
 			char* pMap = MapMain[map];
@@ -662,6 +682,7 @@ static void Draw()
 		if (!recMaps[map].Contains(mp)) continue;
 		mp = recMaps[0].LerpPos(recMaps[map].InverseLerpPos(mp));
 		int mx = (int)mp.x, my = MAP_H-1-(int)mp.y;
+		#ifndef __SMARTPHONE__
 		char& MMapTile = MapMain[map][my * MAP_W + mx];
 		static bool mRemoving = false;
 		bool Chg = false;
@@ -676,6 +697,7 @@ static void Draw()
 		if (ZL_Input::Clicked(ZL_BUTTON_MIDDLE)) { MMapTile = (MMapTile < 'a' ? MMapTile|0x20 : MMapTile&~0x20); sThing::Setup(&MMapTile); Chg = true; }
 		if (Chg) FillMapBackgroundTextures();
 		ZL_Display::FillRect(ZL_Rectf::ByCorners(recMaps[map].LerpPos(recMaps[0].InverseLerpPos(ZLV(mx, MAP_H-my))), recMaps[map].LerpPos(recMaps[0].InverseLerpPos(ZLV(mx+1, MAP_H-my-1)))), ZL_Color::Yellow);
+		#endif
 		if (ZL_Input::Down(ZLK_F1)) Player.Pos = recMaps[map].LerpPos(recMaps[0].InverseLerpPos(ZLV(mx+.5f, MAP_H-my-.5f)));
 		break;
 	}
@@ -705,25 +727,48 @@ static void Draw()
 	if (Player.KeyRing & 0x8) srfItems.SetTilesetIndex(0).Draw(InvX + 100, 14, PIHALF*.5f, .5, .5, colKeyLocks[3]);
 
 	float DistToStartSq = Player.Pos.GetDistanceSq(PlayerStartPos);
-	if (Player.OperatingPrism)
+	if (Phase == PHASE_ASKQUIT)
+	{
+		ZL_Display::FillRect(0, 0, ZLWIDTH, ZLHEIGHT, ZLLUMA(0, .7));
+		DrawTextBordered(ZL_Display::Center() + ZLV(0,  200), "PAUSE", 1.25f, ZL_Color::White, ZL_Color::Black, fntBig, 4, ZL_Origin::Center);
+		if (showTouchUI)
+		{
+			DrawTextBordered(ZL_Display::Center() + ZLV(0, -200), "Press [BACK] again to quit", .5f, ZL_Color::White, ZL_Color::Black, fntBig, 1, ZL_Origin::Center);
+			DrawTextBordered(ZL_Display::Center() + ZLV(0, -300), "Tap screen to continue", .5f, ZL_Color::White, ZL_Color::Black, fntBig, 1, ZL_Origin::Center);
+		}
+		else
+		{
+			#ifndef __WEBAPP__
+			DrawTextBordered(ZL_Display::Center() + ZLV(0, -200), "Press [ESC] again to quit", .5f, ZL_Color::White, ZL_Color::Black, fntBig, 1, ZL_Origin::Center);
+			#endif
+			DrawTextBordered(ZL_Display::Center() + ZLV(0, -300), "Press [SPACE] to continue", .5f, ZL_Color::White, ZL_Color::Black, fntBig, 1, ZL_Origin::Center);
+		}
+	}
+	else if (Player.OperatingPrism)
 	{
 		ZL_Vector TextOffset = ZLV(0, Player.Pos.y < recMaps[Player.Map].MidY() ? 240 : -300);
-		DrawTextBordered(ZL_Display::Center() + TextOffset + ZLV(0, 75), "Use [A] / [D] to rotate prism", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
-		DrawTextBordered(ZL_Display::Center() + TextOffset, "Press [SPACE] to stop operation", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
+		if (showTouchUI)
+		{
+			DrawTextBordered(ZL_Display::Center() + TextOffset + ZLV(0, 75), "Drag left/right to rotate prism", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
+			DrawTextBordered(ZL_Display::Center() + TextOffset, "Tap prism to stop operation", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
+		}
+		else
+		{
+			DrawTextBordered(ZL_Display::Center() + TextOffset + ZLV(0, 75), "Use [A] / [D] to rotate prism", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
+			DrawTextBordered(ZL_Display::Center() + TextOffset, "Press [SPACE] to stop operation", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
+		}
 	}
 	else if (Player.TileTouchingPrism)
 	{
 		ZL_Vector TextOffset = ZLV(0, Player.Pos.y < recMaps[Player.Map].MidY() ? 250 : -250);
-		DrawTextBordered(ZL_Display::Center() + TextOffset, "Press [SPACE] to operate prism", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
-	}
-	else if (Phase == PHASE_ASKQUIT)
-	{
-		ZL_Display::FillRect(0, 0, ZLWIDTH, ZLHEIGHT, ZLLUMA(0, .7));
-		DrawTextBordered(ZL_Display::Center() + ZLV(0,  200), "PAUSE", 1.25f, ZL_Color::White, ZL_Color::Black, fntBig, 4, ZL_Origin::Center);
-		#ifndef __WEBAPP__
-		DrawTextBordered(ZL_Display::Center() + ZLV(0, -200), "Press [ESC] again to quit", .5f, ZL_Color::White, ZL_Color::Black, fntBig, 1, ZL_Origin::Center);
-		#endif
-		DrawTextBordered(ZL_Display::Center() + ZLV(0, -300), "Press [SPACE] continue", .5f, ZL_Color::White, ZL_Color::Black, fntBig, 1, ZL_Origin::Center);
+		if (showTouchUI)
+		{
+			DrawTextBordered(ZL_Display::Center() + TextOffset, "Tap prism to operate it", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
+		}
+		else
+		{
+			DrawTextBordered(ZL_Display::Center() + TextOffset, "Press [SPACE] to operate prism", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
+		}
 	}
 	else if (DistToStartSq < 1)
 	{
@@ -733,9 +778,16 @@ static void Draw()
 		if (Phase == PHASE_PLAY)
 		{
 			DrawTextBordered(ZL_Display::Center() + ZLV(0, -120), "Get to the goal!", 1.0f, TexBlack, TexWhite, fntBig, 2, ZL_Origin::Center);
-			DrawTextBordered(ZL_Display::Center() + ZLV(0, -220), "Use [WASD] or [ARROWS] to move", 1.0f, TexBlack, TexWhite, fntBig, 2, ZL_Origin::Center);
-			DrawTextBordered(ZL_Display::Center() + ZLV(0, -285), "[ESC] to Pause / [ALT]+[Enter] for fullscreen toggle", .25f, TexBlack, TexWhite, fntBig, 1, ZL_Origin::Center);
-			DrawTextBordered(ZL_Display::Center() + ZLV(0, -320), "(C) 2018 Bernhard Schelling", .25f, TexBlack, TexWhite, fntBig, 1, ZL_Origin::Center);
+			if (showTouchUI)
+			{
+				DrawTextBordered(ZL_Display::Center() + ZLV(0, -220), "Drag up/down/left/right to move", 1.0f, TexBlack, TexWhite, fntBig, 2, ZL_Origin::Center);
+			}
+			else
+			{
+				DrawTextBordered(ZL_Display::Center() + ZLV(0, -220), "Use [WASD] or [ARROWS] to move", 1.0f, TexBlack, TexWhite, fntBig, 2, ZL_Origin::Center);
+				DrawTextBordered(ZL_Display::Center() + ZLV(0, -285), "[ESC] to Pause / [ALT]+[Enter] for fullscreen toggle", .25f, TexBlack, TexWhite, fntBig, 1, ZL_Origin::Center);
+			}
+			DrawTextBordered(ZL_Display::Center() + ZLV(0, -320), "(C) 2018-2019 Bernhard Schelling", .25f, TexBlack, TexWhite, fntBig, 1, ZL_Origin::Center);
 		}
 	}
 
@@ -751,7 +803,7 @@ static void Draw()
 		ZL_Color TexWhite = ZLLUMA(1, a), TexBlack = ZLLUMA(0, a);
 		DrawTextBordered(ZL_Display::Center() + ZLV(0,    0), "You defeated the Lazer Maze!", 1.25f, TexWhite, TexBlack, fntBig, 4, ZL_Origin::Center);
 		DrawTextBordered(ZL_Display::Center() + ZLV(0,  200), "Congratulations!", 1.25f, TexWhite, TexBlack, fntBig, 4, ZL_Origin::Center);
-		#ifndef __WEBAPP__
+		#if !defined(__WEBAPP__) && !defined(__SMARTPHONE__)
 		DrawTextBordered(ZL_Display::Center() + ZLV(0, -300), "Press ESC to Quit", .5f, TexWhite, TexBlack, fntBig, 1, ZL_Origin::Center);
 		#endif
 	}
