@@ -34,10 +34,12 @@
 #include <vector>
 
 #ifdef __SMARTPHONE__
-bool showTouchUI = true;
+static bool showTouchUI = true;
 #else
-bool showTouchUI = false;
+static bool showTouchUI = false;
 #endif
+static bool touchHasMovement;
+static ticks_t touchPressTime;
 
 static ZL_Font fntBig;
 static ZL_Surface srfTiles, srfItems, srfFloor;
@@ -457,7 +459,7 @@ static void Init()
 
 static void Update()
 {
-	if (showTouchUI && ZL_Input::KeyDownCount()) showTouchUI = false;
+	if (showTouchUI && ZL_Input::KeyDownCount() && !ZL_Input::Down(ZLK_ESCAPE)) showTouchUI = false;
 	else if (!showTouchUI && ZL_Input::Down(ZL_BUTTON_LEFT)) showTouchUI = true;
 
 	if (ZL_Input::Down(ZLK_ESCAPE))
@@ -488,10 +490,10 @@ static void Update()
 
 	bool actionHit = ((Player.OperatingPrism || Player.TileTouchingPrism) && ZL_Input::Down(ZLK_SPACE));
 
-	ZL_Vector touchPosPlayerOnScreen = ZL_Rectf::Map(Player.Pos, recOrtho, ZL_Rectf(0, 0, ZLWIDTH, ZLHEIGHT));
-	ZL_Rectf touchRecAction = ZL_Rectf(touchPosPlayerOnScreen, ZLHEIGHT*.05f);
-	ZL_Vector touchDrag = (ZL_Input::HeldOutside(touchRecAction) ? ((ZL_Input::Pointer() - touchPosPlayerOnScreen).AddLength(-ZLHEIGHT*.05f) / (ZLHEIGHT*.2f)).SetMaxLength(1) : ZL_Vector::Zero);
-	actionHit |= ((Player.OperatingPrism || Player.TileTouchingPrism) && ZL_Input::Clicked(touchRecAction));
+	if (ZL_Input::Down()) touchPressTime = ZLTICKS;
+	touchHasMovement = (ZL_Input::Held() && (touchHasMovement || ZL_Input::PointerDownDelta() > ZLHEIGHT*.01f));
+	ZL_Vector touchDrag = (touchHasMovement ? (ZL_Input::PointerDownDelta() / (ZLHEIGHT*.2f)).SetMaxLength(1) : ZL_Vector::Zero);
+	actionHit |= ((Player.OperatingPrism || Player.TileTouchingPrism) && ZL_Input::Clicked() && ZLSINCE(touchPressTime) < 200);
 
 	if (Player.OperatingPrism == NULL)
 	{
@@ -526,11 +528,11 @@ static void Update()
 	else
 	{
 		float PrismRot = s((ZL_Input::Held(ZLK_A)||ZL_Input::Held(ZLK_LEFT)) - (ZL_Input::Held(ZLK_D)||ZL_Input::Held(ZLK_RIGHT)));
-		if (!PrismRot) PrismRot = -touchDrag.x;
+		if (!PrismRot && touchHasMovement) PrismRot = touchDrag.x * touchDrag.x * -ZL_Math::Sign(touchDrag.x); //curve
 
 		if (PrismRot)
 		{
-			Player.PrismRotSpeed = ZL_Math::Clamp(Player.PrismRotSpeed + ZLELAPSEDF(5), .5f, 5);
+			Player.PrismRotSpeed = (touchHasMovement ? 5 : ZL_Math::Clamp(Player.PrismRotSpeed + ZLELAPSEDF(5), .5f, 5));
 			Player.OperatingPrism->Dir.Rotate(ZLELAPSEDF(PrismRot * Player.PrismRotSpeed));
 		}
 		else Player.PrismRotSpeed = 0;
@@ -750,7 +752,7 @@ static void Draw()
 		if (showTouchUI)
 		{
 			DrawTextBordered(ZL_Display::Center() + TextOffset + ZLV(0, 75), "Drag left/right to rotate prism", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
-			DrawTextBordered(ZL_Display::Center() + TextOffset, "Tap prism to stop operation", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
+			DrawTextBordered(ZL_Display::Center() + TextOffset, "Tap to stop operation", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
 		}
 		else
 		{
@@ -763,7 +765,7 @@ static void Draw()
 		ZL_Vector TextOffset = ZLV(0, Player.Pos.y < recMaps[Player.Map].MidY() ? 250 : -250);
 		if (showTouchUI)
 		{
-			DrawTextBordered(ZL_Display::Center() + TextOffset, "Tap prism to operate it", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
+			DrawTextBordered(ZL_Display::Center() + TextOffset, "Tap to operate it", .75f, ZL_Color::Black, ZL_Color::White, fntBig, 2, ZL_Origin::Center);
 		}
 		else
 		{
@@ -806,6 +808,22 @@ static void Draw()
 		#if !defined(__WEBAPP__) && !defined(__SMARTPHONE__)
 		DrawTextBordered(ZL_Display::Center() + ZLV(0, -300), "Press ESC to Quit", .5f, TexWhite, TexBlack, fntBig, 1, ZL_Origin::Center);
 		#endif
+	}
+	if (Phase == PHASE_PLAY && touchHasMovement)
+	{
+		ZL_Vector touchPoint = ZL_Input::PointerDown(), touchEndPoint = touchPoint + ZL_Input::PointerDownDelta().SetMaxLength(ZLHEIGHT*.2f);
+		if (Player.OperatingPrism == NULL)
+		{
+			ZL_Display::DrawCircle(touchPoint, ZLHEIGHT*.2f, ZLWHITE, ZLALPHA(.1));
+		}
+		else
+		{
+			touchEndPoint.y = touchPoint.y += ZLHEIGHT*.1f;
+			ZL_Display::DrawRect(ZL_Rectf(touchPoint, ZLV(ZLHEIGHT*.2f, 20)), ZLWHITE, ZLALPHA(.1));
+		}
+		ZL_Display::DrawLine(touchPoint, touchEndPoint, ZL_Color::White);
+		ZL_Display::FillCircle(touchPoint, 10, ZLWHITE);
+		ZL_Display::FillCircle(touchEndPoint, 10, ZLWHITE);
 	}
 }
 
