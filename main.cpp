@@ -242,7 +242,7 @@ struct sThing
 	void DoLazer(int map, int recurse = 0, const int* LazerCol = NULL)
 	{
 		ZL_Vector PosOff = ZLV(Pos.x+.5f, Pos.y+.5f);
-		Active = ZL_Math::Clamp(Active + ZLELAPSEDF(50), 1.f, MAP_W+MAP_H);
+		Active = ZL_Math::Clamp(Active + ZLELAPSEDF(50), 1.f, float(MAP_W+MAP_H));
 		for (float f = .71f; f < Active; f += .5f)
 		{
 			ZL_Vector TestPos = PosOff + Dir * f;
@@ -302,7 +302,7 @@ struct sPlayer
 		for (int i = 4; i >= 0; i--) if (recMaps[i].Contains(Pos)) { Map = i; break; }
 		SubPos = ZL_Rectf::Map(Pos, recMaps[Map], recMaps[0]);
 		SubMapDepth = (Map ? ZL_Math::ClosestPointOnLine(Pos, MapPoints[Map], MapPoints[Map] + ZLV(1, 0)).GetDistance(Pos) : 0);
-		Scale = ZL_Math::Lerp(1.f, .2f, ZL_Math::Clamp(SubMapDepth, 0, 1));
+		Scale = ZL_Math::Lerp(1.f, .2f, ZL_Math::Clamp01(SubMapDepth));
 		if (!CheckCollision) return;
 
 		TileTouchingPrism = NULL;
@@ -532,7 +532,7 @@ static void Update()
 
 		if (PrismRot)
 		{
-			Player.PrismRotSpeed = (touchHasMovement ? 5 : ZL_Math::Clamp(Player.PrismRotSpeed + ZLELAPSEDF(5), .5f, 5));
+			Player.PrismRotSpeed = (touchHasMovement ? 5 : ZL_Math::Clamp(Player.PrismRotSpeed + ZLELAPSEDF(5), .5f, 5.f));
 			Player.OperatingPrism->Dir.Rotate(ZLELAPSEDF(PrismRot * Player.PrismRotSpeed));
 		}
 		else Player.PrismRotSpeed = 0;
@@ -601,7 +601,7 @@ static void Draw()
 			}
 			else if (it.Type == sThing::THING_DOOR)
 			{
-				if (it.Active && it.Active != 1) it.Active = ZL_Math::Min(1, it.Active + ZLELAPSEDF(2));
+				if (it.Active && it.Active != 1) it.Active = ZL_Math::Min(1.f, it.Active + ZLELAPSEDF(2));
 				float d = .49f - (it.Active * .3f);
 				srfTiles.SetTilesetIndex(0).DrawTo(it.Pos.x+.01f, it.Pos.y+.01f, it.Pos.x+.01f+d, it.Pos.y+.01f+d);
 				srfTiles.SetTilesetIndex(0).DrawTo(it.Pos.x+.99f, it.Pos.y+.01f, it.Pos.x+.99f-d, it.Pos.y+.01f+d);
@@ -610,7 +610,7 @@ static void Draw()
 			}
 			else if (it.Type == sThing::THING_TRAP)
 			{
-				if (it.Active && it.Active != 1) it.Active = ZL_Math::Min(1, it.Active + ZLELAPSEDF(2));
+				if (it.Active && it.Active != 1) it.Active = ZL_Math::Min(1.f, it.Active + ZLELAPSEDF(2));
 				float d = (it.Active * .98f);
 				srfTiles.SetTilesetIndex(2).DrawTo(it.Pos.x+.28f, it.Pos.y+.01f, it.Pos.x+.38f, it.Pos.y+.01f+d, colKeyLocks[it.Col]);
 				srfTiles.SetTilesetIndex(2).DrawTo(it.Pos.x+.61f, it.Pos.y+.01f, it.Pos.x+.71f, it.Pos.y+.01f+d, colKeyLocks[it.Col]);
@@ -619,7 +619,7 @@ static void Draw()
 			}
 			else if (it.Type == sThing::THING_ACTIVATOR)
 			{
-				float NewActive = (it.InCol == it.Col ? ZL_Math::Min(1, it.Active + ZLELAPSED) : 0);
+				float NewActive = (it.InCol == it.Col ? ZL_Math::Min(1.f, it.Active + ZLELAPSED) : 0);
 				srfItems.SetTilesetIndex(NewActive != 1 ? 4 : 5).DrawTo(it.Pos.x+0, it.Pos.y+0, it.Pos.x+1, it.Pos.y+1, colLazer[it.Col]);
 				if (it.Active != NewActive)
 				{
@@ -647,7 +647,7 @@ static void Draw()
 			}
 			else if (it.Type == sThing::THING_LOCK)
 			{
-				if (it.Active && it.Active != 1) it.Active = ZL_Math::Min(1, it.Active + ZLELAPSEDF(2));
+				if (it.Active && it.Active != 1) it.Active = ZL_Math::Min(1.f, it.Active + ZLELAPSEDF(2));
 				srfTiles.SetTilesetIndex(3).DrawTo(it.Pos.x+0, it.Pos.y+0, it.Pos.x+1, it.Pos.y+(1 - it.Active * .9f), colKeyLocks[it.Col]);
 			}
 			else if (it.Type == sThing::THING_FINISH)
